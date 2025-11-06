@@ -108,11 +108,6 @@ Contributions are welcome! Please:
 2. Keep commits focused and add tests where possible
 3. Open a Pull Request with a clear description and screenshots of admin UI changes
 
-## Security
-
-If you discover a security issue, **please do not file a public issue**.
-Contact the maintainers or FOSSASIA privately so we can coordinate a fix responsibly.
-
 ## License
 
 Apache License 2.0. See [`LICENSE.txt`](LICENSE.txt).
