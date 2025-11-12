@@ -32,10 +32,15 @@ if ( ! defined( 'WPINC' ) ) {
 
 /**
  * Currently plugin version.
- * Start at version 1.0.0 and use SemVer - https://semver.org
- * Rename this for your plugin and update it as you release new versions.
+ * Updated to version 1.2.0 to include deterministic logging and status lifecycle.
  */
-define( 'WPFA_MAILCONNECT_VERSION', '1.0.0' );
+define( 'WPFA_MAILCONNECT_VERSION', '1.2.0' );
+
+/**
+ * Defines the required database schema version.
+* Updated to 1.2.0 to trigger dbDelta for the new 'hash' column and UNIQUE index.
+ */
+define( 'WPFA_MAILCONNECT_DB_VERSION', '1.2.0' );
 
 /**
  * The code that runs during plugin activation.
@@ -65,6 +70,16 @@ register_deactivation_hook( __FILE__, 'deactivate_wpfa_mailconnect' );
 require plugin_dir_path( __FILE__ ) . 'includes/class-wpfa-mailconnect.php';
 
 /**
+ * Require the logger class
+ */
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpfa-mailconnect-logger.php';
+
+/**
+ * Require the updater class for database migrations.
+ */
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpfa-mailconnect-updater.php';
+
+/**
  * Begins execution of the plugin.
  *
  * Since everything within the plugin is registered via hooks,
@@ -77,6 +92,5 @@ function run_wpfa_mailconnect() {
 
 	$plugin = new Wpfa_Mailconnect();
 	$plugin->run();
-
 }
 run_wpfa_mailconnect();
