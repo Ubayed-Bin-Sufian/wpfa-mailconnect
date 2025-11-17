@@ -205,13 +205,25 @@ class Wpfa_Mailconnect_SMTP {
 					$output[ $id ] = $input[ $id ] === '1' ? '1' : '0';
 				}
 			} else {
-				// Handle sanitization for other field types (optional but recommended)
+				// Handle sanitization for other field types
 				if ( isset( $input[ $id ] ) ) {
 					switch ( $args['type'] ) {
 						case 'text':
-						case 'password':
 						case 'select':
 							$output[ $id ] = sanitize_text_field( $input[ $id ] );
+							break;
+						case 'password':
+							// ENCRYPTION: Only encrypt if password was actually changed
+							// Check if the submitted value is not empty and different from placeholder
+							if ( ! empty( $input[ $id ] ) && $input[ $id ] !== '********' ) {
+								// Encrypt the new password before saving
+								$output[ $id ] = Wpfa_Mailconnect_Encryption::encrypt( $input[ $id ] );
+							} elseif ( empty( $input[ $id ] ) ) {
+								// If empty, keep the existing encrypted value
+								$existing_options = get_option( 'smtp_options', array() );
+								$output[ $id ] = isset( $existing_options[ $id ] ) ? $existing_options[ $id ] : '';
+							}
+							// If it's '********', it means user didn't change it, keep existing value
 							break;
 						case 'number':
 							$output[ $id ] = absint( $input[ $id ] );
@@ -243,53 +255,55 @@ class Wpfa_Mailconnect_SMTP {
 	 * @return void
 	 */
     public function render_field( $args ) {
-        $options = get_option( 'smtp_options', array() );
-        $id      = sanitize_key( $args['id'] );
+		$options = get_option( 'smtp_options', array() );
+		$id      = sanitize_key( $args['id'] );
 		
 		// Check type first, then set value once
-        if ( isset( $args['type'] ) && 'password' === $args['type'] ) {
-			// Password fields: use saved value or empty string (never show default)
-            $value = isset( $options[ $id ] ) ? $options[ $id ] : '';
+		if ( isset( $args['type'] ) && 'password' === $args['type'] ) {
+			// Password fields: show placeholder if value exists, empty string if not
+			// NEVER show the actual encrypted value or decrypted password
+			$value = isset( $options[ $id ] ) && ! empty( $options[ $id ] ) ? '********' : '';
 		} else {
 			// All other fields: use saved value or default
 			$value = isset( $options[ $id ] ) ? $options[ $id ] : $args['default'];
-        } 
+		}
 
-        if ( isset( $args['type'] ) && 'select' === $args['type'] ) {
-            echo '<select id="' . esc_attr( $id ) . '" name="smtp_options[' . esc_attr( $id ) . ']">';
-            foreach ( $args['options'] as $val => $label ) {
-                printf(
-                    '<option value="%s" %s>%s</option>',
-                    esc_attr( $val ),
-                    selected( $value, $val, false ),
-                    esc_html( $label )
-                );
-            }
-            echo '</select>';
-        } elseif ( isset( $args['type'] ) && 'checkbox' === $args['type'] ) {
-            // Checkbox handling: value is 1 if checked, 0 if not set/unchecked
-            $checked = ( '1' === $value || true === $value );
-            printf(
-                '<input type="checkbox" id="%s" name="smtp_options[%s]" value="1" %s />',
-                esc_attr( $id ),
-                esc_attr( $id ),
-                checked( $checked, true, false )
-            );
-        } else {
-                // text/password/number
-                printf(
-                    '<input type="%s" id="%s" name="smtp_options[%s]" value="%s" class="regular-text" />',
-                    esc_attr( $args['type'] ),
-                    esc_attr( $id ),
-                    esc_attr( $id ),
-                    esc_attr( $value )
-                );
-            }
+		if ( isset( $args['type'] ) && 'select' === $args['type'] ) {
+			echo '<select id="' . esc_attr( $id ) . '" name="smtp_options[' . esc_attr( $id ) . ']">';
+			foreach ( $args['options'] as $val => $label ) {
+				printf(
+					'<option value="%s" %s>%s</option>',
+					esc_attr( $val ),
+					selected( $value, $val, false ),
+					esc_html( $label )
+				);
+			}
+			echo '</select>';
+		} elseif ( isset( $args['type'] ) && 'checkbox' === $args['type'] ) {
+			// Checkbox handling: value is 1 if checked, 0 if not set/unchecked
+			$checked = ( '1' === $value || true === $value );
+			printf(
+				'<input type="checkbox" id="%s" name="smtp_options[%s]" value="1" %s />',
+				esc_attr( $id ),
+				esc_attr( $id ),
+				checked( $checked, true, false )
+			);
+		} else {
+			// text/password/number
+			printf(
+				'<input type="%s" id="%s" name="smtp_options[%s]" value="%s" class="regular-text" placeholder="%s" />',
+				esc_attr( $args['type'] ),
+				esc_attr( $id ),
+				esc_attr( $id ),
+				esc_attr( $value ),
+				( 'password' === $args['type'] && ! empty( $value ) ) ? 'Leave blank to keep current password' : ''
+			);
+		}
 
-        if ( isset( $args['description'] ) ) {
-            printf( '<p class="description">%s</p>', esc_html( $args['description'] ) );
-        }
-    }
+		if ( isset( $args['description'] ) ) {
+			printf( '<p class="description">%s</p>', esc_html( $args['description'] ) );
+		}
+	}
 
 	/**
 	 * Renders the plugin settings page.
@@ -518,17 +532,22 @@ class Wpfa_Mailconnect_SMTP {
      * @param PHPMailer $phpmailer The PHPMailer instance to configure.
      * @return void
      */
-    public function phpmailer_override( $phpmailer ) {
-        $options = get_option( 'smtp_options', array() );
+	public function phpmailer_override( $phpmailer ) {
+		$options = get_option( 'smtp_options', array() );
 
 		$user   = isset( $options['smtp_user'] ) ? trim( $options['smtp_user'] ) : '';
-		$pass   = isset( $options['smtp_pass'] ) ? $options['smtp_pass'] : '';
+		
+		// DECRYPTION: Decrypt password before use
+		$pass   = isset( $options['smtp_pass'] ) ? Wpfa_Mailconnect_Encryption::decrypt( $options['smtp_pass'] ) : '';
+		
 		$host   = isset( $options['smtp_host'] ) ? trim( $options['smtp_host'] ) : 'localhost';
 		$port   = isset( $options['smtp_port'] ) ? (int) $options['smtp_port'] : 25;
+		
 		// Validate port range (1-65535)
 		if ( $port < 1 || $port > 65535 ) {
 			$port = 25; // fallback to default SMTP port
 		}
+		
 		$secure = isset( $options['smtp_secure'] ) ? $options['smtp_secure'] : '';
 		$auth   = isset( $options['smtp_auth'] ) ? (bool) $options['smtp_auth'] : false;
 		$from   = isset( $options['smtp_from'] ) ? trim( $options['smtp_from'] ) : get_option( 'admin_email' );
@@ -541,7 +560,7 @@ class Wpfa_Mailconnect_SMTP {
 			$phpmailer->SMTPAuth   = $auth;
 			$phpmailer->Port       = $port;
 			$phpmailer->Username   = $user;
-			$phpmailer->Password   = $pass;
+			$phpmailer->Password   = $pass; // Decrypted password
 			$phpmailer->SMTPSecure = $secure;
 
 			// Validate 'From' email address before assignment
@@ -555,7 +574,7 @@ class Wpfa_Mailconnect_SMTP {
 			$phpmailer->FromName   = $name;
 		}
 
-        // Disable debug output
-        $phpmailer->SMTPDebug = 0;
+		// Disable debug output
+		$phpmailer->SMTPDebug = 0;
 	}
 }

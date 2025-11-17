@@ -171,6 +171,11 @@ class Wpfa_Mailconnect {
 		 */
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-wpfa-mailconnect-smtp.php';
 
+		/**
+		 * The class responsible for encryption utilities.
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-wpfa-mailconnect-encryption.php';
+
 		$this->loader = new Wpfa_Mailconnect_Loader();
 
 	}
