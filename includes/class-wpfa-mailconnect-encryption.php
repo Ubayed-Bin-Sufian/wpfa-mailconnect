@@ -109,22 +109,25 @@ class Wpfa_Mailconnect_Encryption {
 			return $value;
 		}
 
+		// Store the original encrypted value to return on failure, preventing silent data loss.
+		$original_value = $value;
+
 		// Check if OpenSSL is available
 		if ( ! function_exists( 'openssl_decrypt' ) ) {
-			error_log( 'WPFA MailConnect: OpenSSL not available for decryption.' );
-			return '';
+			error_log( 'WPFA MailConnect: OpenSSL not available for decryption. Returning original value.' );
+			return $original_value; // Return original stored value
 		}
 
 		try {
 			// Remove prefix
-			$value = substr( $value, strlen( self::ENCRYPTED_PREFIX ) );
+			$payload = substr( $value, strlen( self::ENCRYPTED_PREFIX ) );
 
 			// Decode from base64
-			$decoded = base64_decode( $value, true );
+			$decoded = base64_decode( $payload, true );
 
 			if ( false === $decoded ) {
-				error_log( 'WPFA MailConnect: Base64 decode failed.' );
-				return '';
+				error_log( 'WPFA MailConnect: Base64 decode failed. Returning original value.' );
+				return $original_value;
 			}
 
 			$key       = self::get_encryption_key();
@@ -143,15 +146,15 @@ class Wpfa_Mailconnect_Encryption {
 			);
 
 			if ( false === $decrypted ) {
-				error_log( 'WPFA MailConnect: Decryption failed.' );
-				return '';
+				error_log( 'WPFA MailConnect: Decryption failed. Returning original value.' );
+				return $original_value;
 			}
 
 			return $decrypted;
 
 		} catch ( Exception $e ) {
-			error_log( 'WPFA MailConnect Decryption Error: ' . $e->getMessage() );
-			return '';
+			error_log( 'WPFA MailConnect Decryption Error: ' . $e->getMessage() . '. Returning original value.' );
+			return $original_value;
 		}
 	}
 
