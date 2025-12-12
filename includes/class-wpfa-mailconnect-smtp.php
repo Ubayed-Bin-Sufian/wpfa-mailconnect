@@ -191,6 +191,7 @@ class Wpfa_Mailconnect_SMTP {
 		$output = get_option( 'smtp_options', array() );
 		
 		// Merge submitted data with current data to ensure non-submitted fields are retained
+		// WARNING: If 'smtp_pass' was '********' in $input, $output['smtp_pass'] is now '********'
 		$output = array_merge( $output, $input );
 
 		// Check all fields defined in the class
@@ -214,16 +215,18 @@ class Wpfa_Mailconnect_SMTP {
 							break;
 						case 'password':
 							// ENCRYPTION: Only encrypt if password was actually changed
-							// Check if the submitted value is not empty and different from placeholder
+
+							// Check if the submitted value is not empty and NOT the placeholder
 							if ( ! empty( $input[ $id ] ) && $input[ $id ] !== '********' ) {
 								// Encrypt the new password before saving
 								$output[ $id ] = Wpfa_Mailconnect_Encryption::encrypt( $input[ $id ] );
-							} elseif ( empty( $input[ $id ] ) ) {
-								// If empty, keep the existing encrypted value
-								$existing_options = get_option( 'smtp_options', array() );
-								$output[ $id ] = isset( $existing_options[ $id ] ) ? $existing_options[ $id ] : '';
-							}
-							// If it's '********', it means user didn't change it, keep existing value
+							} else {
+								// If the value is empty OR it is the placeholder '********', 
+								// we must restore the existing encrypted value.
+								// Because we merged $input into $output earlier, $output[$id] might currently be '********'.
+                                $existing_options = get_option( 'smtp_options', array() );
+                                $output[ $id ] = isset( $existing_options[ $id ] ) ? $existing_options[ $id ] : '';
+                            }
 							break;
 						case 'number':
 							$output[ $id ] = absint( $input[ $id ] );
