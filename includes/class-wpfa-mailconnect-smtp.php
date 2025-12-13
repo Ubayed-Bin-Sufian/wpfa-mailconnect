@@ -556,9 +556,27 @@ class Wpfa_Mailconnect_SMTP {
 
 		$user 	 = isset( $options['smtp_user'] ) ? trim( $options['smtp_user'] ) : '';
 		
-		// DECRYPTION: Decrypt password before use
-		$pass 	 = isset( $options['smtp_pass'] ) ? Wpfa_Mailconnect_Encryption::decrypt( $options['smtp_pass'] ) : '';
-		
+		// DECRYPTION: Decrypt password before use and handle failures explicitly.
+		$pass = '';
+		if ( isset( $options['smtp_pass'] ) ) {
+			$raw_pass	= $options['smtp_pass'];
+			$decrypted	= Wpfa_Mailconnect_Encryption::decrypt( $raw_pass );
+			
+			// If the value is encrypted and decrypt() returns it unchanged, treat as decryption failure.
+			// This check relies on Wpfa_Mailconnect_Encryption::is_encrypted() method being available.
+			if ( method_exists( 'Wpfa_Mailconnect_Encryption', 'is_encrypted' )
+				&& Wpfa_Mailconnect_Encryption::is_encrypted( $raw_pass )
+				&& $decrypted === $raw_pass
+			) {
+				$pass = '';
+				// Log a clear error so admins know credentials cannot be decrypted.
+				if ( function_exists( 'error_log' ) ) {
+					error_log( '[WPFA Mailconnect] SMTP password decryption failed. The stored credentials could not be decrypted. Please re-save SMTP settings.' );
+				}
+			} else {
+				$pass = $decrypted;
+			}
+		}
 		$host 	 = isset( $options['smtp_host'] ) ? trim( $options['smtp_host'] ) : 'localhost';
 		$port 	 = isset( $options['smtp_port'] ) ? (int) $options['smtp_port'] : 25;
 		
@@ -579,7 +597,7 @@ class Wpfa_Mailconnect_SMTP {
 			$phpmailer->SMTPAuth   = $auth;
 			$phpmailer->Port 	   = $port;
 			$phpmailer->Username   = $user;
-			$phpmailer->Password   = $pass; // Decrypted password
+			$phpmailer->Password   = $pass; // Decrypted password, or empty string on failure
 			$phpmailer->SMTPSecure = $secure;
 
 			// Validate 'From' email address before assignment
