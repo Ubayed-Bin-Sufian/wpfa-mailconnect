@@ -189,11 +189,12 @@ class Wpfa_Mailconnect_SMTP {
 	 */
 	public function sanitize_smtp_options( $input ) {
 		// Cache existing options before merging, needed later for restoring unchanged passwords.
+		// This optimization prevents a redundant call to get_option() inside the password logic loop.
 		$smtp_existing_options = get_option( 'smtp_options', array() );
 		$output = $smtp_existing_options;
 
 		// Merge submitted data with existing data. Submitted password field will overwrite the encrypted value
-		// with the placeholder '********' (if unchanged) or a new plaintext value (if changed).
+		// with an empty string (if unchanged) or a new plaintext value (if changed).
 		$output = array_merge( $output, $input );
 
 		// Check all fields defined in the class
@@ -218,14 +219,14 @@ class Wpfa_Mailconnect_SMTP {
 						case 'password':
 							// ENCRYPTION: Only encrypt if password was actually changed
 
-							// Check if the submitted value is not empty and NOT the placeholder
-							if ( ! empty( $input[ $id ] ) && $input[ $id ] !== '********' ) {
+							// Check if the submitted value is NOT empty.
+							// The render_field change means the value will be empty if unchanged.
+							if ( ! empty( $input[ $id ] ) ) {
 								// Encrypt the new password before saving
 								$output[ $id ] = Wpfa_Mailconnect_Encryption::encrypt( $input[ $id ] );
 							} else {
-								// If the value is empty OR it is the placeholder '********', 
-								// we must restore the existing encrypted value.
-								// Because we merged $input into $output earlier, $output[$id] might currently be '********'.
+								// If the value is empty, we must restore the existing encrypted value.
+								// Since $output was merged with $input, $output[$id] is currently empty.
 								$output[ $id ] = isset( $smtp_existing_options[ $id ] ) ? $smtp_existing_options[ $id ] : '';
 							}
 							break;
@@ -254,6 +255,7 @@ class Wpfa_Mailconnect_SMTP {
 	 * Renders an individual settings field.
 	 *
 	 * Supports text, password, number, select, and checkbox field types.
+	 * Fixes a visibility issue where the password placeholder/hint was hidden by a non-empty value.
 	 *
 	 * @param array $args Field definition and metadata (includes 'id', 'type', 'default', etc.).
 	 * @return void
@@ -262,14 +264,27 @@ class Wpfa_Mailconnect_SMTP {
 		$options = get_option( 'smtp_options', array() );
 		$id 	 = sanitize_key( $args['id'] );
 		
-		// Check type first, then set value once
-		if ( isset( $args['type'] ) && 'password' === $args['type'] ) {
-			// Password fields: show placeholder if value exists, empty string if not
-			// NEVER show the actual encrypted value or decrypted password
-			$value = isset( $options[ $id ] ) && ! empty( $options[ $id ] ) ? '********' : '';
+		// Check if a value is already saved (used for password field hint).
+		$is_password_field 	= isset( $args['type'] ) && 'password' === $args['type'];
+		$has_existing_value = isset( $options[ $id ] ) && ! empty( $options[ $id ] );
+
+		// Determine the value for the input field
+		if ( $is_password_field ) {
+			// Password fields must be blank to allow the placeholder to show the 'keep current' hint,
+			// and to force the user to re-enter if they want to change it.
+			$value = '';
 		} else {
 			// All other fields: use saved value or default
 			$value = isset( $options[ $id ] ) ? $options[ $id ] : $args['default'];
+		}
+		
+		// Determine the placeholder text
+		$placeholder = '';
+		if ( $is_password_field && $has_existing_value ) {
+			// Show the placeholder text as a hint if a password is already saved
+			$placeholder = esc_attr__( 'Leave blank to keep current password', 'wpfa-mailconnect' );
+		} elseif ( isset( $args['placeholder'] ) ) {
+			$placeholder = esc_attr( $args['placeholder'] );
 		}
 
 		if ( isset( $args['type'] ) && 'select' === $args['type'] ) {
@@ -300,7 +315,7 @@ class Wpfa_Mailconnect_SMTP {
 				esc_attr( $id ),
 				esc_attr( $id ),
 				esc_attr( $value ),
-				( 'password' === $args['type'] && ! empty( $value ) ) ? 'Leave blank to keep current password' : ''
+				$placeholder // Use the determined placeholder
 			);
 		}
 
