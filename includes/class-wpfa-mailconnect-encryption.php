@@ -77,6 +77,13 @@ class Wpfa_Mailconnect_Encryption {
 			// IV length for AES-256-GCM is typically 12 bytes (96 bits) for security
 			$iv_length = openssl_cipher_iv_length( self::CIPHER_METHOD );
 			$iv	 = openssl_random_pseudo_bytes( $iv_length );
+
+			// Check if IV generation failed
+			if ( false === $iv ) {
+				error_log( 'WPFA MailConnect: Failed to generate IV. Storing value without encryption.' );
+				return $value;
+			}
+
 			$tag = ''; // Required variable for the GCM authentication tag
 
 			$encrypted = openssl_encrypt(
