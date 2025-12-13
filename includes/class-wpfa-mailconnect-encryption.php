@@ -26,9 +26,12 @@ class Wpfa_Mailconnect_Encryption {
 	/**
 	 * Encryption method to use (AES-256-GCM for authenticated encryption).
 	 *
+	 * Note: Must be lowercase for OpenSSL functions.
+	 *
 	 * @since 1.2.3 (Changed from AES-256-CBC)
+	 * @since 1.2.4 (Changed to lowercase)
 	 */
-	const CIPHER_METHOD = 'AES-256-GCM';
+	const CIPHER_METHOD = 'aes-256-gcm';
 
 	/**
 	 * Length of the authentication tag in bytes (128 bits) for AES-GCM.
@@ -76,11 +79,19 @@ class Wpfa_Mailconnect_Encryption {
 			
 			// IV length for AES-256-GCM is typically 12 bytes (96 bits) for security
 			$iv_length = openssl_cipher_iv_length( self::CIPHER_METHOD );
-			$iv	 = openssl_random_pseudo_bytes( $iv_length );
+
+			// Check for unsupported cipher or invalid length
+			if ( ! is_int( $iv_length ) || $iv_length <= 0 ) {
+				error_log( 'WPFA MailConnect: Cipher method "' . self::CIPHER_METHOD . '" is unsupported or IV length is invalid (' . (int) $iv_length . '). Storing value without encryption.' );
+				return $value;
+			}
+
+			// Generate cryptographically secure IV
+			$iv	 = self::get_secure_random_bytes( $iv_length );
 
 			// Check if IV generation failed
 			if ( false === $iv ) {
-				error_log( 'WPFA MailConnect: Failed to generate IV. Storing value without encryption.' );
+				error_log( 'WPFA MailConnect: Failed to generate cryptographically secure IV. Storing value without encryption.' );
 				return $value;
 			}
 
@@ -158,6 +169,12 @@ class Wpfa_Mailconnect_Encryption {
 			$iv_length = openssl_cipher_iv_length( self::CIPHER_METHOD );
 			$tag_length = self::TAG_LENGTH;
 
+			// Check for unsupported cipher or invalid length
+			if ( ! is_int( $iv_length ) || $iv_length <= 0 ) {
+				error_log( 'WPFA MailConnect: Cipher method "' . self::CIPHER_METHOD . '" is unsupported or IV length is invalid during decryption. Returning original value.' );
+				return $original_value;
+			}
+
 			// Check if the decoded payload is long enough (IV + Tag + at least one block of data)
 			if ( strlen( $decoded ) < $iv_length + $tag_length ) {
 				error_log( 'WPFA MailConnect: Decoded payload is too short. Returning original value.' );
@@ -218,5 +235,36 @@ class Wpfa_Mailconnect_Encryption {
 
 		// Hash to ensure consistent key length for AES-256 (32 bytes)
 		return hash( 'sha256', $key, true );
+	}
+
+	/**
+	 * Generates cryptographically secure random bytes for IV/salt.
+	 *
+	 * Uses random_bytes() (PHP 7+) if available, falling back to openssl_random_pseudo_bytes().
+	 *
+	 * @since 			1.2.4
+	 * @param int 		$length The number of random bytes to generate.
+	 * @return string 	false The random bytes, or false on failure.
+	 */
+	private static function get_secure_random_bytes( $length ) {
+		if ( function_exists( 'random_bytes' ) ) {
+			try {
+				return random_bytes( $length );
+			} catch ( Exception $e ) {
+				error_log( 'WPFA MailConnect: random_bytes failed with exception: ' . $e->getMessage() );
+				// Fall through to openssl if it fails
+			}
+		}
+
+		if ( function_exists( 'openssl_random_pseudo_bytes' ) ) {
+			$bytes = openssl_random_pseudo_bytes( $length );
+			// Check if openssl failed or returned too few bytes
+			if ( false !== $bytes && strlen( $bytes ) === $length ) {
+				return $bytes;
+			}
+			return false;
+		}
+
+		return false;
 	}
 }
