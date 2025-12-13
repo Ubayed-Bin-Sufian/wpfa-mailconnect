@@ -300,7 +300,7 @@ class Wpfa_Mailconnect_SMTP {
 				esc_attr( $id ),
 				esc_attr( $id ),
 				esc_attr( $value ),
-				( 'password' === $args['type'] && ! empty( $value ) ) ? 'Leave blank to keep current password' : ''
+				( 'password' === $args['type'] && ! empty( $value ) ) ? 'Leave blank to keep current password.' : ''
 			);
 		}
 
